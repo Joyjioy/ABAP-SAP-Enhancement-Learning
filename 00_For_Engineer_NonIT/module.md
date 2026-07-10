@@ -1,427 +1,290 @@
 # Maintenance Enhancement Workflow
-### Panduan Memahami dan Mengeksekusi Perubahan Logic di SAP — Untuk Engineer Non-IT
+### Panduan Eksekusi Perubahan Logic SAP — Untuk Maintenance Engineer
 
 ---
 
 ## 1. Pendahuluan
 
-Dokumen ini ditulis untuk **maintenance engineer** yang tidak memiliki latar belakang pemrograman, tetapi perlu:
-- Memahami bagaimana sebuah *requirement* teknis (misalnya "jika ada trip maka buat notification") bisa diwujudkan di dalam sistem SAP.
-- Mampu **membaca alur logic**, **memverifikasi hasil**, dan **mengarahkan** perubahan — tanpa harus menulis kode ABAP sendiri.
-- Bisa berkomunikasi secara presisi dengan ABAP developer/consultant, sehingga tidak terjadi salah paham antara "apa yang diminta" dan "apa yang dibangun".
+### 1.1 Target Pembaca
+Dokumen ini untuk maintenance engineer yang sudah menguasai SAP PM dari sisi bisnis (equipment, functional location, notification, work order) namun belum terbiasa dengan proses perubahan sistem (enhancement). Fokus dokumen: eksekusi dan verifikasi, bukan pengenalan modul PM.
 
-Dokumen ini **sengaja tidak membahas sintaks ABAP secara mendalam**. Fokusnya adalah *proses berpikir* dan *proses eksekusi organisasi*, bukan cara menulis baris kode.
+### 1.2 Enhancement vs Modification
+Enhancement adalah penyisipan logic baru melalui titik resmi yang disediakan SAP (User Exit, BAdI, Enhancement Point) tanpa mengubah kode standar. Modification adalah perubahan langsung pada kode standar SAP — dihindari karena hilang saat upgrade dan membutuhkan access key khusus dari SAP.
 
-### Apa itu Enhancement
-**Enhancement** adalah penambahan atau modifikasi logic pada sistem SAP tanpa mengubah program standar SAP secara langsung. Ini berbeda dengan **Modification**, yaitu mengubah langsung kode inti SAP (SAP standard object) — sesuatu yang sangat dihindari dalam praktik nyata karena berisiko tinggi (lihat bagian 4.5).
-
-Enhancement biasanya berbentuk:
-- Menambah validasi/logic tambahan pada proses yang sudah ada.
-- Membuat notifikasi otomatis berdasarkan kondisi tertentu.
-- Menambah field atau perhitungan tambahan pada transaksi standar.
-
-### Posisi Engineer Maintenance dalam SAP
-Dalam ekosistem SAP, ada beberapa peran yang biasanya terpisah:
-
-| Peran | Tanggung Jawab |
-|---|---|
-| **Business/Maintenance Engineer** | Tahu proses lapangan, tahu apa yang dibutuhkan, menjadi *requester* |
-| **Functional Consultant (PM)** | Menerjemahkan kebutuhan bisnis menjadi konfigurasi/spesifikasi sistem |
-| **ABAP Developer** | Menulis dan mengimplementasikan kode berdasarkan spesifikasi |
-| **Basis/Transport Admin** | Mengelola perpindahan perubahan antar environment (Dev → QAS → PRD) |
-
-Di banyak perusahaan (termasuk yang lebih kecil), satu orang bisa merangkap beberapa peran. Tujuan dokumen ini adalah membuat mentor kamu **kompeten di peran pertama, dan cukup paham peran kedua** untuk bisa mengawasi/memverifikasi pekerjaan developer.
-
-### Batasan Modul Ini
-Modul ini **membahas**:
-- Cara berpikir dari requirement lapangan menjadi solusi sistem.
-- Cara membaca (bukan menulis) program SAP untuk memahami alur logic.
-- Cara memverifikasi hasil melalui debugging visual, bukan lewat kode.
-- Proses formal: analisis → desain → implementasi → testing → transport.
-- Sintaks ABAP Sederhana
-
-Modul ini **tidak membahas** secara mendalam:
-- Administrasi Basis/server SAP.
-- Konfigurasi modul SAP PM di level customizing (SPRO) — hanya disinggung sejauh relevan.
+### 1.3 Pembagian Peran
+Requester (business/maintenance) merumuskan kebutuhan menjadi Functional Specification. ABAP Developer mengimplementasikan. Requester memverifikasi hasil melalui debugger, bukan membaca kode. Dokumen ini menutup kompetensi di peran pertama dan ketiga.
 
 ---
 
-## 2. Gambaran Besar SAP PM (Contoh Pada Plant Maintenance)
+## 2. Siklus Enhancement di Proyek Nyata
 
-### 2.1 Equipment
-Objek yang merepresentasikan unit fisik yang dipelihara — misalnya sebuah transformator, pompa, atau circuit breaker tertentu. Equipment punya nomor unik dan riwayat (histori kerusakan, maintenance plan, dll).
+Berikut tahapan standar untuk satu Change Request (CR) enhancement skala kecil-menengah, dengan estimasi durasi realistis. Durasi bervariasi tergantung kompleksitas dan antrean di tim IT/ABAP.
 
-### 2.2 Functional Location
-Representasi **posisi/lokasi fungsional** dalam struktur pabrik (misalnya: Area A > Substation 1 > Panel 6kV > Feeder 3), terlepas dari equipment fisik yang terpasang di situ. Equipment bisa diganti, tapi Functional Location tetap.
+| Fase | Aktivitas | Output | Pihak Terlibat | Estimasi Durasi |
+|---|---|---|---|---|
+| 1. Requirement Gathering | Kebutuhan mentah dari lapangan digali sampai jadi kebutuhan spesifik (bukan solusi) | Notes/minutes of meeting | Requester, end user | 1-2 hari |
+| 2. Data Feasibility Check | Verifikasi apakah data pendukung sudah tersedia di SAP (native atau interface) | Catatan hasil cek | Requester, functional consultant | 1-2 hari |
+| 3. Functional Specification | Business rule dituangkan ke FS: trigger, kondisi, data, output, test scenario | Dokumen FS | Requester | 1-3 hari |
+| 4. Technical Analysis | Developer menelusuri program terkait dan titik enhancement yang tersedia | Technical Spec / catatan analisis | ABAP developer | 2-4 hari |
+| 5. Build (Development) | Implementasi logic di environment DEV, pada titik enhancement yang dipilih | Objek ABAP di DEV | ABAP developer | 3-7 hari |
+| 6. Verifikasi Bersama | Requester dan developer memverifikasi logic lewat debugger (breakpoint/watchpoint) sebelum masuk testing formal | Catatan verifikasi | Requester, developer | 0.5-1 hari |
+| 7. Testing di QAS | Positive, negative, boundary, regression case dijalankan di Quality System | Test result / sign-off | Requester, developer, QA | 2-5 hari |
+| 8. Approval & Transport Scheduling | Sign-off requester, review CAB (jika ada), penjadwalan transport ke Production | TR approved, jadwal transport | Requester, approver, Basis | 1-3 hari |
+| 9. Go-Live | Transport dieksekusi ke Production, biasanya di luar jam operasional kritikal | Perubahan live di PRD | Basis, developer | 1 hari |
+| 10. Hypercare | Pemantauan ketat pasca go-live untuk menangkap false positive/negative yang tidak muncul saat testing | Log monitoring, defect list (jika ada) | Requester, developer | 5-10 hari |
 
-### 2.3 Notification
-Dokumen yang mencatat **temuan/masalah** — bisa berupa laporan kerusakan, permintaan inspeksi, atau catatan kondisi abnormal. Ini adalah objek yang paling relevan dengan contoh "jika trip maka buat notification".
+Total durasi tipikal untuk CR skala kecil-menengah: **3-5 minggu**. Ini bukan indikasi ABAP-nya rumit — mayoritas waktu terpakai di analisis, testing berlapis, dan approval. Penting dikomunikasikan ke atasan agar ekspektasi timeline realistis.
 
-### 2.4 Work Order
-Dokumen tindak lanjut dari notification — berisi rencana kerja, material yang dibutuhkan, tenaga kerja, dan biaya untuk mengeksekusi perbaikan.
-
-### 2.5 Permit
-Izin kerja (misalnya *work permit*, *hot work permit*) yang harus disetujui sebelum Work Order boleh dieksekusi di lapangan — relevan untuk aspek safety/compliance.
-
-### 2.6 Business Process
-Alur end-to-end: **Trip terjadi → Notification dibuat → Work Order diterbitkan → Permit disetujui → Eksekusi → Closing**. Setiap enhancement yang kamu buat harus dipetakan: dia masuk di titik mana dalam alur ini?
-
-### 2.7 SAP Business Workflow — Alternatif dari Logic Tambahan
-Sebelum buru-buru berpikir "butuh program baru", penting diketahui bahwa SAP punya fitur bawaan bernama **Business Workflow**: mekanisme *event-driven* yang bisa otomatis memicu aksi (misalnya kirim notifikasi/email/task) ketika sebuah event terjadi di sistem, **tanpa menulis logic enhancement**. 
-
-> Prinsip penting untuk mentor kamu: **tidak semua requirement butuh kode baru.** Kadang cukup konfigurasi workflow yang sudah tersedia. Ini pertanyaan pertama yang harus selalu diajukan sebelum masuk ke analisis teknis.
-
----
-
-## 3. Ketika Requirement Datang
-
-### 3.1 Siapa yang Meminta
-Requirement bisa datang dari operator lapangan, tim maintenance, safety officer, atau manajemen. Penting dicatat: **siapa yang meminta menentukan siapa yang harus approve** hasil akhirnya nanti.
-
-### 3.2 Requirement vs Solution
-Requirement adalah **kebutuhan**, bukan **solusi**. 
-
-Contoh:
-- Requirement: "Kalau ada trip pada breaker, saya ingin tahu segera."
-- Solusi (masih bisa berbeda-beda): notification otomatis, email alert, dashboard alert, SMS gateway, dll.
-
-Kesalahan paling umum: requester langsung mengajukan solusi ("buatkan notification otomatis"), padahal solusi terbaik belum tentu itu. Tugas engineer maintenance adalah **menggali requirement asli** di balik solusi yang diminta.
-
-### 3.3 Mengubah Requirement menjadi Business Rule
-Business rule adalah requirement yang sudah dirumuskan dalam bentuk kondisi-aksi yang jelas dan bisa diverifikasi:
-
-> "**JIKA** status breaker berubah menjadi TRIP **DAN** breaker berada di Functional Location kategori kritikal, **MAKA** sistem membuat Notification tipe M2 dengan prioritas tinggi dan mengirim ke role Shift Supervisor."
-
-Ini jauh lebih siap dieksekusi dibanding requirement mentah di 3.2.
-
-### 3.4 Dari Requirement ke Functional Specification (FS)
-Sebelum masuk ke ABAP, business rule di atas perlu dituangkan dalam dokumen **Functional Specification (FS)** — dokumen yang ditulis dalam bahasa bisnis (bukan kode) yang menjelaskan:
-1. Latar belakang & tujuan
-2. Trigger (kapan logic ini berjalan)
-3. Kondisi (business rule, dalam bahasa "jika...maka...")
-4. Data yang terlibat (equipment, functional location, dsb)
-5. Output yang diharapkan (jenis notification, siapa penerima, dsb)
-6. Skenario pengujian (test case)
-
-FS inilah dokumen yang **mentor kamu bisa tulis dan approve sendiri**, tanpa perlu tahu ABAP. FS ini kemudian diterjemahkan developer menjadi Technical Specification (TS) yang berisi detail program/tabel/field yang akan diubah.
-
-*(Template FS tersedia di Lampiran, bagian 17.)*
+Catatan praktis:
+- Fase 2 (Data Feasibility Check) sering dilewati, padahal ini penyebab paling umum CR "macet": kebutuhan sebenarnya adalah masalah integrasi data (data belum masuk SAP), bukan masalah logic.
+- Fase 6 (Verifikasi Bersama) sering dianggap opsional oleh developer karena requester dianggap tidak perlu tahu detail teknis. Ini yang membuat requester tidak punya kontrol atas hasil akhir sebelum testing formal — sebaiknya diminta secara eksplisit.
+- Fase 10 (Hypercare) sering diabaikan setelah go-live dianggap "selesai". Requester adalah pihak yang paling tepat memantau fase ini karena berada di lapangan.
 
 ---
 
-## 4. Analisis Requirement
+## 3. Requirement dan Business Rule
 
-### 4.1 Apa yang Berubah?
-Tentukan dengan presisi: apakah yang berubah adalah *data yang disimpan*, *logic keputusan*, atau *tampilan/output* saja?
+### 3.1 Requirement vs Solution
+Requirement adalah kebutuhan; solusi ditentukan setelah analisis. Requester sering mengajukan solusi langsung (contoh: "buatkan notification otomatis"). Tugas maintenance engineer adalah menggali kebutuhan yang mendasarinya sebelum solusi ditentukan.
 
-### 4.2 Apakah Perlu Database (Tabel) Baru?
-Jika business rule butuh menyimpan informasi baru yang belum ada tempatnya (misalnya "kategori kritikal" pada Functional Location), mungkin perlu tabel tambahan (Z-table) atau field tambahan pada tabel standar.
+### 3.2 Business Rule
+Business rule dirumuskan dalam format kondisi-aksi yang presisi dan bisa diuji:
 
-### 4.3 Apakah Hanya Logic?
-Jika semua data yang dibutuhkan **sudah ada** di sistem, dan yang kurang hanya "aturan keputusan", maka ini murni pekerjaan logic — tidak perlu perubahan struktur data.
+"JIKA status breaker berubah menjadi TRIP DAN breaker berada di Functional Location kategori kritikal, MAKA sistem membuat Notification tipe M2 prioritas tinggi ke role Shift Supervisor."
 
-### 4.4 Dampak ke Modul Lain
-SAP adalah sistem terintegrasi. Perubahan di modul PM (Plant Maintenance) bisa berdampak ke modul lain seperti MM (Material Management, untuk Work Order yang butuh spare part) atau HR (untuk penugasan tenaga kerja). Selalu tanyakan: **siapa lagi yang memakai data/proses yang akan saya ubah?**
+### 3.3 Functional Specification (FS)
+FS ditulis oleh requester (template pada bagian 15), memuat trigger, business rule, data yang terlibat, output yang diharapkan, dan skenario testing. FS menjadi acuan resmi bagi developer dan dokumentasi approval.
 
-### 4.5 Enhancement vs Modification — Kenapa Ini Penting
-Ada dua cara mengubah perilaku sistem SAP:
+---
 
-| | **Enhancement** | **Modification** |
+## 4. Analisis Sebelum Eksekusi
+
+### 4.1 Ketersediaan Data
+Verifikasi apakah data pendukung business rule sudah tersedia di SAP, baik dari entry manual maupun interface dari sistem lain (SCADA/PLC). Jika belum tersedia, masalahnya adalah integrasi data, bukan enhancement logic.
+
+### 4.2 Kebutuhan Struktur Data Baru
+Jika business rule membutuhkan atribut yang belum memiliki tempat di sistem (contoh: kategori kritikal pada Functional Location), diperlukan field atau tabel tambahan.
+
+### 4.3 Dampak Lintas Proses
+Perubahan pada modul PM berpotensi berdampak ke modul lain (misalnya MM untuk kebutuhan material pada Work Order) atau proses notifikasi/workflow lain yang sudah berjalan.
+
+### 4.4 Penentuan Enhancement vs Modification
+Pertanyaan wajib ke developer setiap CR: apakah requirement dapat dipenuhi melalui titik enhancement resmi, atau memerlukan modifikasi kode standar. Jawaban ini menentukan risiko jangka panjang terhadap upgrade sistem.
+
+---
+
+## 5. Desain Logic
+
+### 5.1 Decision Table
+Format standar untuk business rule dengan banyak kondisi:
+
+| Status | Kategori FL | Aksi |
 |---|---|---|
-| Definisi | Menyisipkan logic lewat titik resmi (User Exit, BAdI, Enhancement Point) | Mengubah langsung kode program standar SAP |
-| Aman saat upgrade? | Ya, umumnya tetap ada | Tidak, bisa hilang/konflik saat upgrade |
-| Direkomendasikan? | Ya, ini praktik standar industri | Dihindari, hanya jika benar-benar tidak ada alternatif |
-| Butuh akses khusus? | Relatif standar (developer key) | Butuh **access key** khusus dari SAP untuk object standar |
-
-**Poin paling penting untuk mentor kamu:** setiap kali ada permintaan "ubah logic di SAP", pertanyaan pertama yang harus diajukan adalah *"Apakah ini bisa dilakukan lewat titik enhancement resmi, atau harus modifikasi kode standar?"* — karena jawabannya menentukan risiko jangka panjang.
-
----
-
-## 5. Menentukan Data
-
-### 5.1 Entity
-Objek bisnis yang terlibat — misalnya Equipment, Notification, Functional Location.
-
-### 5.2 Table
-Representasi fisik entity di database SAP (misalnya tabel `EQUZ` untuk equipment, `QMEL` untuk notification header — nama tabel hanya perlu dikenali sebagai referensi, tidak perlu dihafal).
-
-### 5.3 Field
-Kolom spesifik di dalam tabel — misalnya status breaker, tanggal trip, kategori kritikal.
-
-### 5.4 Relationship
-Bagaimana tabel-tabel tersebut saling terhubung — misalnya satu Functional Location bisa punya banyak Equipment, satu Equipment bisa punya banyak Notification.
-
----
-
-## 6. Mencari Program SAP
-
-### 6.1 SE38 / SE80
-Transaksi untuk membuka dan melihat program ABAP (SE38 untuk program tunggal, SE80 sebagai *object navigator* yang lebih lengkap — bisa melihat program, function module, class, dalam satu tampilan pohon/tree).
-
-### 6.2 Cara Membaca Program
-Fokus pada **struktur**, bukan detail sintaks:
-- Bagian `DATA` = deklarasi variabel/data yang dipakai.
-- Bagian `IF...ENDIF` = titik keputusan (di sinilah business rule biasanya berada).
-- Komentar (baris yang diawali `*` atau `"`) = penjelasan dari developer sebelumnya, sering berisi konteks penting.
-
-### 6.3 Cara Menemukan FORM yang Tepat
-`FORM` adalah "blok logic" yang bisa dipanggil ulang (mirip sub-rutin). Untuk mencari FORM yang relevan, gunakan fitur **pencarian teks (Find/Ctrl+F)** di editor untuk mencari kata kunci terkait business process (misalnya "TRIP", "NOTIFICATION", "STATUS").
-
-### 6.4 Cara Mengikuti PERFORM
-`PERFORM` adalah instruksi "panggil FORM ini". Untuk memahami alur program secara keseluruhan, ikuti rantai PERFORM dari titik awal (biasanya event/transaksi yang memicu) sampai ke FORM yang menangani logic yang relevan. Ini seperti mengikuti "peta alur", bukan membaca kode kata per kata.
-
-### 6.5 Mengenal Titik Enhancement
-Ada tiga jenis titik enhancement yang perlu dikenali (secara konsep, bukan teknis mendalam):
-
-- **User Exit**: titik yang sudah disiapkan SAP sejak lama di program tertentu, biasanya berupa FORM kosong yang memang didesain untuk diisi logic tambahan oleh perusahaan.
-- **BAdI (Business Add-In)**: mekanisme lebih modern, berbasis "interface" — logic tambahan ditulis di objek terpisah, sama sekali tidak menyentuh program standar.
-- **Enhancement Point/Spot**: titik yang disisipkan langsung di dalam kode standar oleh SAP, ditandai secara eksplisit, sebagai tempat resmi menambah logic tanpa mengubah kode aslinya.
-
-Semua ini bisa dicari lewat transaksi **SE18/SE19** (untuk BAdI) atau **SMOD/CMOD** (untuk User Exit klasik) — cukup dikenali namanya dulu, detail teknis ada di repository ABAP kamu.
-
----
-
-## 7. Mendesain Logic
-
-### 7.1 Flowchart
-Gambarkan alur keputusan secara visual — titik mulai, kondisi (diamond), aksi (kotak), titik akhir. Ini adalah "bahasa universal" yang bisa dipahami mentor kamu tanpa perlu ABAP.
-
-### 7.2 Decision Table
-Untuk business rule dengan banyak kondisi, tabel keputusan lebih jelas dari flowchart:
-
-| Kondisi: Status | Kondisi: Kategori FL | Aksi |
-|---|---|---|
-| TRIP | Kritikal | Notification prioritas tinggi + alert Shift Supervisor |
+| TRIP | Kritikal | Notification prioritas tinggi ke Shift Supervisor |
 | TRIP | Non-kritikal | Notification prioritas normal |
 | NORMAL | — | Tidak ada aksi |
 
-### 7.3 Pseudo Code
-Tuliskan logic dalam bahasa semi-formal (bukan ABAP asli), misalnya:
+### 5.2 Pseudo Code
 ```
 JIKA status_breaker = "TRIP" DAN kategori_FL = "KRITIKAL"
     MAKA buat_notification(tipe="M2", prioritas="TINGGI")
 ```
-Ini adalah "jembatan" antara business rule dan kode ABAP sesungguhnya — mentor kamu bisa menulis dan memverifikasi level ini.
-
-### 7.4 Impact Analysis
-Sebelum implementasi, dokumentasikan: program apa saja yang tersentuh, tabel apa saja yang terpengaruh, dan proses bisnis lain apa yang mungkin ikut berubah perilakunya.
+Level ini yang dapat ditulis dan diverifikasi requester sebelum masuk ke implementasi ABAP.
 
 ---
 
-## 8. Implementasi (Level Konsep, Bukan Sintaks Mendalam)
+## 6. Menemukan Program dan Titik Enhancement
 
-> Bagian ini sengaja singkat — detail sintaks sudah ada di repository ABAP kamu. Tujuannya di sini hanya mengenalkan mentor kamu pada istilah, agar dia paham laporan/diskusi teknis dari developer.
+### 6.1 Identifikasi Program dari Transaksi
+Menu System > Status pada transaksi yang sedang dijalankan menampilkan nama program dan screen number aktif. Ini titik awal standar untuk memastikan program yang dianalisis benar.
 
-### 8.1 Menambah IF
-Blok keputusan dasar — implementasi langsung dari Decision Table di 7.2.
+### 6.2 Identifikasi Tabel/Field dari Layar
+F1 pada field tertentu, dilanjutkan klik Technical Information, menampilkan nama tabel dan field teknis yang mendasari tampilan tersebut, serta program dan screen number terkait.
 
-### 8.2 READ TABLE
-Perintah untuk "mengambil" satu baris data spesifik dari kumpulan data (mirip VLOOKUP di Excel, sebagai analogi).
+### 6.3 Runtime Analysis (SAT)
+Transaksi SAT (pengganti ST12/SE30) merekam seluruh program, FORM, dan Function Module yang dieksekusi saat satu aksi dilakukan di layar. Digunakan dengan cara: aktifkan recording, jalankan transaksi yang dianalisis di sesi terpisah, lakukan aksi yang diteliti, hentikan recording. Hasil rekaman menunjukkan urutan eksekusi program secara aktual, sehingga analisis tidak bergantung pada dugaan.
 
-### 8.3 MESSAGE
-Perintah untuk menampilkan pesan ke pengguna (informasi, warning, atau error).
+### 6.4 Identifikasi Titik Enhancement yang Sudah Ada
+Sebelum mengusulkan enhancement baru, periksa apakah implementasi sudah ada di titik tersebut:
+- SE38/SE80, menu Edit > Enhancement Operations > Show Implicit Enhancement Options, untuk melihat titik enhancement yang tersedia maupun yang sudah terisi.
+- SE18 (definisi BAdI) / SE19 (implementasi BAdI).
+- SMOD (definisi User Exit) / CMOD (project implementasi).
 
-### 8.4 PERFORM
-Memanggil blok logic (FORM) lain — lihat 6.4.
+### 6.5 Penelusuran dari Pesan Sistem
+Message class dan nomor message (didapat via F1 pada pesan yang muncul di layar) memungkinkan penelusuran where-used untuk menemukan FORM/program yang memicu pesan tersebut secara langsung.
 
-### 8.5 CALL FUNCTION
-Memanggil fungsi standar SAP yang sudah jadi (misalnya fungsi resmi untuk membuat Notification) — ini penting karena developer yang baik akan **memanfaatkan fungsi standar SAP**, bukan menulis ulang logic pembuatan notification dari nol.
+### 6.6 Where-Used List
+Klik kanan pada Function Module/tabel di SE38/SE80, pilih Where-Used List (Ctrl+Shift+F3), untuk melihat seluruh program lain yang memakai objek yang sama. Digunakan untuk memastikan enhancement baru tidak berbenturan dengan proses lain.
 
-### 8.6 Di Mana Kode Sebenarnya Ditulis?
-Penting untuk mentor kamu memahami **lokasi** penulisan kode menentukan jenis pekerjaan (Enhancement vs Modification, lihat 4.5):
-- Ditulis di dalam **Include Enhancement** (bagian yang di-generate otomatis oleh sistem saat BAdI/User Exit diaktifkan) → aman, ini yang seharusnya terjadi.
-- Ditulis langsung di badan program standar SAP → berisiko, harus dihindari kecuali ada justifikasi kuat dan approval khusus.
+Urutan analisis yang disarankan: 6.1 untuk identifikasi program awal, 6.3 untuk memastikan alur eksekusi aktual (satu transaksi dapat memanggil banyak program), 6.4 untuk mengecek ketersediaan titik enhancement, sebelum masuk ke desain logic pada bagian 5.
 
----
 
-## 9. Verifikasi Tanpa Membaca Kode: Debugging Visual
+## 7. Satu Sesi Enhancement di ABAP Editor
 
-Ini adalah bagian **paling penting** untuk mentor kamu, karena di sinilah dia bisa memverifikasi logic **tanpa harus mengerti sintaks ABAP.**
+Bab sebelumnya menjelaskan bagaimana program dan titik enhancement ditemukan. Bab ini menjelaskan langkah setelahnya: apa yang terjadi ketika program tersebut sudah terbuka di layar, dan bagaimana mengikuti penjelasan developer tanpa perlu menguasai sintaks ABAP secara penuh.
 
-### 9.1 Apa itu Debugger
-Debugger adalah alat bawaan SAP (aktifkan dengan mengetik `/h` di command bar lalu jalankan transaksi) yang menghentikan program di titik tertentu dan menunjukkan **isi data saat itu juga**, seperti memutar video secara *slow-motion* dan bisa di-pause kapan saja.
+### 7.1 Membuka Program (SE38)
+Nama program yang didapat dari bagian 6.1/6.3 dimasukkan ke transaksi SE38, lalu dijalankan dalam mode Display. Program akan terbuka sebagai teks, disusun dari atas ke bawah, namun struktur ini **tidak dibaca berurutan** seperti dokumen biasa.
 
-### 9.2 Breakpoint
-Titik "jeda" yang ditandai di dalam program. Ketika program dijalankan dan sampai di titik itu, eksekusi berhenti otomatis. Mentor kamu tidak perlu menulis breakpoint sendiri — cukup meminta developer menandainya di titik business rule yang relevan, lalu dia bisa mengamati bersama.
+### 7.2 Bagian yang Dilewati vs Bagian yang Diikuti
+Struktur umum sebuah program ABAP:
 
-### 9.3 Watchpoint
-Mirip breakpoint, tapi berhenti otomatis **hanya ketika sebuah variabel berubah menjadi nilai tertentu** (misalnya berhenti otomatis saat status berubah jadi "TRIP"). Ini sangat berguna untuk memverifikasi business rule di 3.3 secara langsung.
-
-### 9.4 Membaca Nilai Variabel Saat Runtime
-Saat program berhenti di breakpoint, semua nilai variabel (status, kategori FL, dsb) bisa dilihat langsung di layar debugger dalam bentuk tabel — ini yang membuat mentor kamu **bisa memverifikasi logic secara visual**, tanpa membaca satu baris kode pun.
-
----
-
-## 10. Testing
-
-### 10.1 Positive Case
-Skenario di mana kondisi terpenuhi dan aksi seharusnya terjadi (misalnya trip pada FL kritikal → notification dibuat).
-
-### 10.2 Negative Case
-Skenario di mana kondisi tidak terpenuhi dan aksi seharusnya **tidak** terjadi (misalnya status normal → tidak ada notification).
-
-### 10.3 Boundary Case
-Skenario di batas kondisi (misalnya kategori FL yang belum terklasifikasi sama sekali — apakah dianggap kritikal atau tidak?).
-
-### 10.4 Regression Test
-Memastikan proses bisnis lain yang **tidak** dimaksudkan untuk berubah, benar-benar tidak berubah setelah enhancement diaktifkan.
-
----
-
-## 11. Activate dan Transport
-
-### 11.1 Check
-Pemeriksaan sintaks otomatis oleh sistem SAP sebelum kode bisa diaktifkan (mirip *spell check*, tapi untuk logic).
-
-### 11.2 Activate
-Proses "mengaktifkan" objek yang sudah lolos check, sehingga bisa dijalankan di environment Development.
-
-### 11.3 Transport Request: Apa dan Kenapa
-SAP menggunakan konsep **tiga environment terpisah**: Development (DEV) → Quality Assurance (QAS) → Production (PRD). Perubahan tidak langsung berlaku di semua environment — dia harus "dipaketkan" dalam sebuah **Transport Request (TR)**, semacam paket pengiriman resmi yang mencatat: apa yang berubah, siapa yang membuat, dan kapan.
-
-TR inilah yang memungkinkan proses **approval bertahap** — perubahan hanya boleh masuk ke Production setelah lolos pengujian di Quality.
-
-### 11.4 Quality (QAS)
-Environment untuk pengujian menyeluruh sebelum ke Production — di sinilah testing (bagian 10) seharusnya benar-benar dijalankan oleh tim yang independen dari developer.
-
-### 11.5 Production (PRD)
-Environment yang benar-benar dipakai operasional sehari-hari. Perubahan ke sini harus melalui approval resmi (lihat bagian 12).
-
----
-
-## 12. Governance dan Change Management
-
-### 12.1 Siapa yang Approve
-Setiap perubahan idealnya melibatkan minimal: requester (mentor kamu/tim maintenance), reviewer teknis (developer/consultant), dan approver (biasanya supervisor/manajer terkait). Ini mencegah perubahan sepihak yang berisiko ke proses operasional.
-
-### 12.2 Change Advisory Board (CAB)
-Di perusahaan besar, perubahan ke Production biasanya harus melalui forum review (CAB) yang menilai risiko sebelum transport dijalankan. Di perusahaan lebih kecil, ini bisa berbentuk approval sederhana lewat email/dokumen — tapi prinsipnya tetap sama: **tidak ada perubahan ke Production tanpa persetujuan tercatat.**
-
-### 12.3 Dokumentasi Perubahan
-Setiap Transport Request sebaiknya disertai catatan singkat: requirement apa yang dipenuhi, siapa yang meminta, hasil testing seperti apa. Ini penting untuk audit dan untuk orang lain (termasuk kamu sendiri di masa depan) yang perlu memahami histori perubahan.
-
-### 12.4 Rollback Plan
-Sebelum transport ke Production, harus ada rencana: **jika terjadi masalah, bagaimana cara mengembalikan ke kondisi semula?** Ini biasanya berupa transport terpisah yang membatalkan perubahan, atau prosedur manual darurat.
-
----
-
-## 13. Studi Kasus Lengkap
-
-**Requirement**
-> "Jika breaker di panel 6kV trip, tim shift harus tahu dalam hitungan menit, bukan menunggu laporan manual."
-
-**Alur:**
 ```
-Requirement (bagian 3)
-      ↓
-Business Rule: JIKA status=TRIP DAN FL=kritikal MAKA notification prioritas tinggi
-      ↓
-Functional Specification (bagian 3.4)
-      ↓
-Analisis: apakah field "kategori kritikal" sudah ada di Functional Location? (bagian 4)
-      ↓
-   [Jika belum ada] → Tambah field/tabel baru (bagian 5)
-      ↓
-Cari titik enhancement yang tepat: User Exit/BAdI pada proses update status equipment (bagian 6.5)
-      ↓
-Desain Logic: Decision Table + Pseudo Code (bagian 7)
-      ↓
-Implementasi oleh developer di Include Enhancement (bagian 8)
-      ↓
-Verifikasi bersama lewat Debugger (breakpoint saat status berubah) (bagian 9)
-      ↓
-Testing: positive, negative, boundary, regression (bagian 10)
-      ↓
-Transport Request → QAS → approval CAB → Production (bagian 11-12)
+REPORT ...              -> deklarasi nama program, dilewati
+TABLES ...               -> deklarasi tabel yang dipakai, dilewati
+DATA ...                 -> deklarasi variabel, dilewati saat pertama kali dibaca
+START-OF-SELECTION.      -> titik ini yang menjadi acuan mulai membaca
+  PERFORM ...
 ```
 
----
+`START-OF-SELECTION` adalah titik masuk eksekusi program yang sesungguhnya. Bagian di atasnya (REPORT, TABLES, DATA) adalah deklarasi yang baru relevan dicek belakangan, saat memang dibutuhkan (misalnya untuk mengecek nama variabel tertentu).
 
-## 14. Kesalahan yang Sering Terjadi
+### 7.3 Mengikuti PERFORM ke FORM
+Baris berbentuk `PERFORM <nama>.` adalah pemanggilan blok logic bernama `<nama>`. Meletakkan kursor pada baris tersebut lalu double-click akan membawa tampilan ke definisi blok logic tersebut, ditandai dengan `FORM <nama>. ... ENDFORM.`. Ini cara program ABAP disusun sebagai rangkaian blok yang saling memanggil, bukan satu blok besar berurutan.
 
-1. **Requester langsung meminta solusi teknis**, bukan menjelaskan kebutuhan — mengakibatkan solusi yang dibangun tidak sesuai kebutuhan asli.
-2. **Melakukan Modification alih-alih Enhancement** — berisiko hilang saat SAP upgrade.
-3. **Tidak menguji Negative Case** — sistem jadi mengirim notification di kondisi yang seharusnya tidak perlu, menyebabkan alert fatigue.
-4. **Langsung transport ke Production tanpa lewat Quality** — risiko gangguan operasional langsung di sistem produksi.
-5. **Tidak ada dokumentasi requirement/FS** — beberapa bulan kemudian tidak ada yang ingat *kenapa* logic tertentu dibuat seperti itu.
-6. **Menganggap semua kebutuhan harus jadi kode baru**, padahal kadang cukup pakai fitur SAP Business Workflow yang sudah tersedia (bagian 2.7).
+### 7.4 Mencari Blok Logic Tertentu
+Ketika developer menyebutkan nama blok logic secara spesifik (contoh: "logicnya ada di FORM CREATE_NOTIFICATION"), gunakan Ctrl+F pada editor, cari teks `CREATE_NOTIFICATION`, dan navigasi ke baris `FORM CREATE_NOTIFICATION`. Tidak diperlukan membaca ulang seluruh program dari awal.
 
----
+### 7.5 Membaca Perubahan Logic, Bukan Sintaks
+Ketika developer menunjukkan perubahan, fokus pada **apa yang berubah dari sisi keputusan bisnis**, bukan pada sintaksnya.
 
-## 15. Mindset Engineer Maintenance
+Logic sebelum perubahan:
+```abap
+IF status = 'TRIP'.
+  PERFORM create_notification.
+ENDIF.
+```
 
-Sebagai maintenance engineer yang belajar SAP, tujuan akhirnya **bukan menjadi ABAP developer** — tapi menjadi *penerjemah yang presisi* antara kebutuhan lapangan dan kemampuan sistem. Kompetensi intinya:
+Logic setelah perubahan:
+```abap
+IF status = 'TRIP'.
+  IF running_hour > 6000.
+    PERFORM create_notification.
+  ENDIF.
+ENDIF.
+```
 
-- Mampu merumuskan requirement menjadi business rule yang jelas (bagian 3).
-- Tahu kapan sesuatu butuh enhancement, dan kapan cukup konfigurasi/workflow bawaan (bagian 2.7, 4.5).
-- Bisa memverifikasi hasil kerja developer lewat debugging visual, bukan lewat membaca kode (bagian 9).
-- Paham proses governance agar setiap perubahan tercatat dan bisa di-rollback (bagian 12).
+Cara membaca perubahan ini: sebelumnya notification dibuat setiap kali status TRIP. Setelah perubahan, notification hanya dibuat jika status TRIP **dan** running hour motor sudah di atas 6000 jam. Developer menambahkan satu syarat keputusan baru, bukan mengganti keseluruhan program. Perubahan pada level ini yang relevan diverifikasi terhadap business rule pada bagian 3.2 — bukan detail penulisan `IF`/`ENDIF` itu sendiri.
 
----
+### 7.6 Setelah Logic Ditambahkan
+Setelah baris ditambahkan, developer menjalankan Check (validasi sintaks), Activate (mengaktifkan objek), lalu Execute untuk menjalankan program dan melihat hasilnya. Tahap ini singkat secara durasi, namun baru bisa dilakukan setelah analisis pada bagian 6 selesai.
 
-## 16. Glosarium & Daftar T-Code Penting
+### 7.7 Alokasi Waktu Developer Selama Build
+Fase Build pada tabel di bagian 2 (estimasi 3-7 hari) tidak terpakai seluruhnya untuk menulis kode. Rincian tipikal:
 
-| Istilah/T-Code | Arti |
+| Aktivitas | Porsi Waktu |
 |---|---|
-| **Equipment** | Unit fisik yang dipelihara |
-| **Functional Location (FL)** | Posisi fungsional dalam struktur pabrik |
-| **Notification** | Catatan temuan/masalah |
-| **Work Order** | Dokumen rencana & eksekusi perbaikan |
-| **Transport Request (TR)** | Paket resmi perpindahan perubahan antar environment |
-| **User Exit** | Titik enhancement klasik, berupa FORM kosong yang disiapkan SAP |
-| **BAdI (Business Add-In)** | Titik enhancement modern berbasis interface, terpisah dari kode standar |
-| **Z-table/Z-program** | Objek custom buatan perusahaan sendiri (bukan bawaan SAP), biasanya diawali huruf Z |
-| **SE38** | Transaksi untuk membuka program ABAP tunggal |
-| **SE80** | Object Navigator — tampilan pohon untuk semua objek development |
-| **SE18/SE19** | Transaksi untuk melihat/implementasi BAdI |
-| **SMOD/CMOD** | Transaksi untuk User Exit klasik |
-| **SE11** | Data Dictionary — untuk melihat struktur tabel |
-| **/h** | Kode command untuk mengaktifkan mode debug |
+| Mencari program dan menelusuri alur (bagian 6.1, 6.3) | 20-30% |
+| Mencari/menentukan titik enhancement yang tepat (bagian 6.4) | 20-30% |
+| Menulis logic (IF, PERFORM, dsb.) | 15-20% |
+| Debugging dan penyesuaian | 15-20% |
+| Persiapan testing awal sebelum diserahkan ke QAS | 10-15% |
+
+Rincian ini relevan dikomunikasikan ke atasan atau pihak yang menganggap proses ini seharusnya selesai dalam hitungan jam.
+
 
 ---
 
-## 17. Lampiran: Template Functional Specification (FS)
+## 8. Verifikasi via Debugger
+
+### 7.1 Aktivasi Debugger
+Ketik `/h` pada command bar, jalankan transaksi seperti biasa. Aksi berikutnya (misalnya Save) akan menghentikan eksekusi dan masuk ke mode debug.
+
+### 7.2 Breakpoint
+Titik jeda pada program, ditandai developer di titik business rule yang relevan. Diminta secara eksplisit pada sesi verifikasi bersama (Fase 6, bagian 2).
+
+### 7.3 Watchpoint
+Berhenti otomatis ketika variabel tertentu berubah ke nilai tertentu (misalnya status berubah menjadi TRIP), tanpa perlu mengetahui posisi baris kode.
+
+### 7.4 Pembacaan Nilai Variabel
+Saat program berhenti, nilai seluruh variabel tampil dalam tabel pada layar debugger — memungkinkan requester memverifikasi hasil logic tanpa membaca kode.
+
+---
+
+## 9. Testing
+
+| Jenis | Contoh |
+|---|---|
+| Positive Case | Trip di FL kritikal menghasilkan notification prioritas tinggi |
+| Negative Case | Status normal tidak menghasilkan notification |
+| Boundary Case | FL yang belum diklasifikasi kritikal/non-kritikal |
+| Regression Test | Proses notification lain yang tidak dimaksud berubah tetap berjalan normal |
+
+Testing dijalankan di Quality System (QAS) dengan keterlibatan langsung requester, bukan berdasarkan laporan sepihak dari developer.
+
+---
+
+## 10. Transport dan Approval
+
+### 9.1 Transport Request (TR)
+Paket resmi yang mencatat perubahan, dipindahkan dari Development ke Quality ke Production. Tidak ada perubahan yang masuk ke Production tanpa melalui TR.
+
+### 9.2 Penjadwalan
+Transport ke Production umumnya dijadwalkan di luar jam operasional kritikal untuk meminimalkan risiko gangguan.
+
+### 9.3 Approval
+Requester memberikan sign-off tertulis atas hasil testing di QAS sebelum TR dieksekusi ke Production.
+
+---
+
+## 11. Governance
+
+- Approval: requester, reviewer teknis, dan atasan terkait.
+- Dokumentasi: FS, hasil testing, dan nomor TR disimpan sebagai jejak audit.
+- Rollback plan: disiapkan sebelum transport ke Production.
+- Hypercare: pemantauan 1-2 minggu pasca go-live (Fase 10, bagian 2).
+
+---
+
+## 12. Kesalahan yang Sering Terjadi
+
+1. Requester mengajukan solusi jadi, bukan kebutuhan yang mendasarinya.
+2. Data Feasibility Check (bagian 4.1) dilewati — masalah integrasi data disalahartikan sebagai kebutuhan enhancement.
+3. Modifikasi kode standar dilakukan tanpa mempertimbangkan titik enhancement resmi.
+4. Requester tidak dilibatkan dalam testing, hanya menerima laporan dari developer.
+5. Transport ke Production dieksekusi tanpa approval atau jadwal yang jelas.
+6. Hypercare tidak dijalankan — defect baru diketahui berminggu-minggu setelah go-live.
+
+---
+
+## 13. Glosarium dan T-Code
+
+| Istilah/T-Code | Kegunaan |
+|---|---|
+| System > Status | Melihat nama program dan transaksi yang sedang berjalan |
+| F1 → Technical Information | Melihat tabel/field teknis di balik field pada layar |
+| SAT (dulu ST12/SE30) | Merekam program/FORM/FM yang dieksekusi saat satu aksi dilakukan |
+| SE38 | Membuka program ABAP tunggal |
+| SE80 | Object Navigator |
+| Edit > Enhancement Operations | Melihat titik enhancement yang tersedia/terisi pada suatu program |
+| SE18 / SE19 | Definisi / implementasi BAdI |
+| SMOD / CMOD | User Exit klasik: definisi / project implementasi |
+| Where-Used List (Ctrl+Shift+F3) | Melihat seluruh pemakaian objek yang sama di program lain |
+| /h | Mengaktifkan mode debug |
+| Transport Request (TR) | Paket resmi perpindahan perubahan antar environment |
+
+---
+
+## 14. Template Functional Specification (FS)
 
 ```
 FUNCTIONAL SPECIFICATION
 
-1. Judul Requirement
-   :
-
-2. Requester & Tanggal
-   :
-
-3. Latar Belakang & Tujuan
-   :
-
-4. Trigger (Kapan logic ini berjalan)
-   :
-
-5. Business Rule (format JIKA...MAKA...)
-   :
-
-6. Data yang Terlibat
-   - Entity   :
-   - Field    :
-   - Sumber data :
-
-7. Output yang Diharapkan
-   :
-
-8. Dampak ke Proses/Modul Lain
-   :
-
+1. Judul Requirement          :
+2. Requester & Tanggal        :
+3. Latar Belakang & Tujuan    :
+4. Trigger                    :
+5. Business Rule (JIKA...MAKA...) :
+6. Data yang Terlibat (entity/field/sumber) :
+7. Output yang Diharapkan     :
+8. Dampak ke Proses/Modul Lain:
 9. Skenario Pengujian
    - Positive Case :
    - Negative Case  :
    - Boundary Case  :
-
-10. Approval
-    - Requester   :
-    - Reviewer    :
-    - Approver    :
+10. Approval (Requester / Reviewer / Approver) :
 ```
 
 ---
 
-*Dokumen ini adalah bagian dari inisiatif pembelajaran internal — dilengkapi dengan repository panduan sintaks ABAP secara terpisah untuk pembelajaran teknis mendalam.*
+Bagian sintaks ABAP tersedia terpisah di repository. Dokumen ini membahas proses eksekusi dan verifikasi enhancement.
