@@ -5,13 +5,10 @@
 
 ## 1. Pendahuluan
 
-### 1.1 Target Pembaca
-Dokumen ini untuk maintenance engineer yang sudah menguasai SAP PM dari sisi bisnis (equipment, functional location, notification, work order) namun belum terbiasa dengan proses perubahan sistem (enhancement). Fokus dokumen: eksekusi dan verifikasi, bukan pengenalan modul PM.
-
-### 1.2 Enhancement vs Modification
+### Enhancement vs Modification
 Enhancement adalah penyisipan logic baru melalui titik resmi yang disediakan SAP (User Exit, BAdI, Enhancement Point) tanpa mengubah kode standar. Modification adalah perubahan langsung pada kode standar SAP — dihindari karena hilang saat upgrade dan membutuhkan access key khusus dari SAP.
 
-### 1.3 Pembagian Peran
+### Pembagian Peran
 Requester (business/maintenance) merumuskan kebutuhan menjadi Functional Specification. ABAP Developer mengimplementasikan. Requester memverifikasi hasil melalui debugger, bukan membaca kode. Dokumen ini menutup kompetensi di peran pertama dan ketiga.
 
 ---
